@@ -4,12 +4,11 @@ Requires: pennylane-lightning-gpu
 All params injected via --config JSON + --p int
 Prints one JSON line to stdout on completion.
 """
-import os, sys, json, time, itertools, argparse
+import os, sys, json, time, argparse
 import numpy as np
 import networkx as nx
 import pennylane as qml
 from scipy.optimize import minimize
-import cvxpy as cp
 
 os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())
 
@@ -51,29 +50,13 @@ EDGES = list(G.edges())
 def cut(bits) -> int:
     return sum(1 for u, v in EDGES if bits[u] != bits[v])
 
-# ── baseline ──────────────────────────────────────────────────────────────────
-def brute_force():
-    return max(cut(list(b)) for b in itertools.product([0, 1], repeat=N))
-
-def gw():
-    X = cp.Variable((N, N), symmetric=True)
-    cons = [X >> 0] + [X[i, i] == 1 for i in range(N)]
-    cp.Problem(cp.Maximize(0.5 * sum(1 - X[u, v] for u, v in G.edges())), cons).solve(solver=cp.SCS, verbose=False)
-    mat = X.value; mat = (mat + mat.T) / 2
-    e = np.linalg.eigvalsh(mat).min()
-    if e < 0: mat += (-e + 1e-8) * np.eye(N)
-    L = np.linalg.cholesky(mat)
-    np.random.seed(SEED)
-    best = 0
-    for _ in range(GWR):
-        bits = (L @ np.random.randn(N) >= 0).astype(int)
-        best = max(best, cut(bits))
-    return best
-
-if N <= 20:
-    BASE = brute_force(); BKEY = "optimal_cut"
+# ── baseline (pre-computed by analyzer) ──────────────────────────────────────
+if "optimal_cut" in cfg:
+    BASE = cfg["optimal_cut"]; BKEY = "optimal_cut"
+elif "gw_cut" in cfg:
+    BASE = cfg["gw_cut"];      BKEY = "gw_cut"
 else:
-    BASE = gw();          BKEY = "gw_cut"
+    sys.stderr.write("ERROR: no baseline in config\n"); sys.exit(1)
 
 # ── circuit ───────────────────────────────────────────────────────────────────
 dev = qml.device(BACKEND, wires=N)

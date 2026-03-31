@@ -6,17 +6,20 @@ Edit CONFIG + EXPERIMENT below, then:
 
 Features:
   - All params here, zero hardcode in platform files
+  - Baseline (brute-force or GW) computed ONCE here, passed to all platforms
   - Per-p timeout kill point
   - Per-p checkpoint (partial results saved immediately)
-  - Auto-detects best backend per platform at runtime
   - Outputs timestamped JSON + prints summary table
-  - cobyla_nfev recorded (tells you how many iterations COBYLA actually ran)
+  - cobyla_nfev recorded (how many iterations COBYLA actually ran)
 """
 
-import subprocess, json, os, sys, time
+import subprocess, json, os, sys, time, itertools
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
+import numpy as np
+import networkx as nx
+import cvxpy as cp
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT CONFIG  —  edit everything here
@@ -26,7 +29,7 @@ CONFIG = {
     "d"        : 4,        # graph regularity
     "shots"    : 1024,     # measurement shots
     "seed"     : 42,
-    "gw_rounds": 300,      # GW rounding iterations (n > 20 only)
+    "gw_rounds": 300,      # GW rounding iterations (used when n > 20)
     "maxiter"  : 10000,    # COBYLA max iterations (exits early on convergence)
     "rhobeg"   : 0.5,      # COBYLA initial trust region radius
     "rhoend"   : 1e-4,     # COBYLA convergence threshold (catol internally)
@@ -34,11 +37,8 @@ CONFIG = {
 
 P_DEPTHS = [1, 2, 3]
 
-# Per-p timeout in seconds. None = no limit.
-# Recommendation: set high enough for CUDA-Q to finish, kill Qiskit if it crawls
-TIMEOUT_PER_P = 900        # 15 min per p
+TIMEOUT_PER_P = 900        # seconds per (platform, p). None = no limit.
 
-# Platforms to run (comment out any you want to skip)
 PLATFORMS = [
     "cudaq",
     "pennylane",
@@ -56,13 +56,45 @@ LABELS = {
 }
 
 DIR       = Path(__file__).parent
-CFG_STR   = json.dumps(CONFIG)
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+# ── baseline (computed once) ──────────────────────────────────────────────────
+def compute_baseline(n, d, seed, gw_rounds):
+    G     = nx.random_regular_graph(d=d, n=n, seed=seed)
+    edges = list(G.edges())
+
+    def cut(bits):
+        return sum(1 for u, v in edges if bits[u] != bits[v])
+
+    if n <= 20:
+        print(f"  [baseline] brute-force (n={n}, 2^{n}={2**n:,} combinations)...")
+        t0  = time.time()
+        val = max(cut(list(b)) for b in itertools.product([0, 1], repeat=n))
+        print(f"  [baseline] optimal_cut = {val}  ({time.time()-t0:.1f}s)")
+        return val, "optimal_cut"
+    else:
+        print(f"  [baseline] Goemans-Williamson SDP (n={n}, rounds={gw_rounds})...")
+        t0 = time.time()
+        X  = cp.Variable((n, n), symmetric=True)
+        cons = [X >> 0] + [X[i, i] == 1 for i in range(n)]
+        cp.Problem(cp.Maximize(0.5 * sum(1 - X[u, v] for u, v in G.edges())),
+                   cons).solve(solver=cp.SCS, verbose=False)
+        mat = X.value; mat = (mat + mat.T) / 2
+        e   = np.linalg.eigvalsh(mat).min()
+        if e < 0: mat += (-e + 1e-8) * np.eye(n)
+        L   = np.linalg.cholesky(mat)
+        np.random.seed(seed)
+        best = 0
+        for _ in range(gw_rounds):
+            bits = (L @ np.random.randn(n) >= 0).astype(int)
+            best = max(best, cut(bits))
+        print(f"  [baseline] gw_cut = {best}  ({time.time()-t0:.1f}s)")
+        return best, "gw_cut"
+
 # ── runner ────────────────────────────────────────────────────────────────────
-def run_p(platform: str, p: int) -> dict:
+def run_p(platform: str, p: int, cfg_str: str) -> dict:
     cmd = [sys.executable, str(DIR / SCRIPTS[platform]),
-           "--config", CFG_STR, "--p", str(p)]
+           "--config", cfg_str, "--p", str(p)]
 
     print(f"    p={p} ...", end="", flush=True)
     t0 = time.time()
@@ -83,18 +115,18 @@ def run_p(platform: str, p: int) -> dict:
         if proc.returncode != 0:
             rt = round(time.time() - t0, 1)
             print(f"  ERROR (exit {proc.returncode})")
-            if err: print(f"      {err.strip()[:300]}")
+            if err: print(f"      {err.strip()[:1000]}")
             return {"platform": LABELS[platform], "p": p, "n": CONFIG["n"],
                     "d": CONFIG["d"], "status": "ERROR",
-                    "error": err.strip()[:300], "runtime_sec": rt}
+                    "error": err.strip()[:1000], "runtime_sec": rt}
 
         r = json.loads(out.strip())
         r["status"] = "OK"
-        ar  = r.get("approximation_ratio", "?")
-        bc  = r.get("best_cut", "?")
-        rt  = r.get("runtime_sec", "?")
+        ar   = r.get("approximation_ratio", "?")
+        bc   = r.get("best_cut", "?")
+        rt   = r.get("runtime_sec", "?")
         nfev = r.get("cobyla_nfev", "?")
-        ok  = r.get("cobyla_success", "?")
+        ok   = r.get("cobyla_success", "?")
         print(f"  AR={ar}  best={bc}  nfev={nfev}  converged={ok}  ({rt}s)")
         return r
 
@@ -131,13 +163,23 @@ def main():
     print(f"  timestamp : {TIMESTAMP}")
     print("=" * 65)
 
+    # compute baseline once, inject into config for all platforms
+    baseline_val, baseline_key = compute_baseline(
+        CONFIG["n"], CONFIG["d"], CONFIG["seed"], CONFIG["gw_rounds"]
+    )
+    cfg = {**CONFIG, baseline_key: baseline_val}
+    cfg_str = json.dumps(cfg)
+
+    print(f"\n  baseline  : {baseline_key} = {baseline_val}")
+    print("=" * 65)
+
     all_results = {}
     t_wall = time.time()
 
     for platform in PLATFORMS:
         print(f"\n  ── {LABELS[platform]} ──")
-        results     = []
-        skip_rest   = False
+        results   = []
+        skip_rest = False
 
         for p in P_DEPTHS:
             if skip_rest:
@@ -147,9 +189,9 @@ def main():
                                  "status": "SKIPPED"})
                 continue
 
-            r = run_p(platform, p)
+            r = run_p(platform, p, cfg_str)
             results.append(r)
-            save(platform, results)   # checkpoint after every p
+            save(platform, results)
 
             if r.get("status") in ("TIMEOUT", "ERROR"):
                 skip_rest = True
@@ -159,19 +201,20 @@ def main():
     # ── summary table ─────────────────────────────────────────────────────────
     print(f"\n{'=' * 65}")
     print(f"  {'Platform':<12} {'Backend':<22} {'p':<4} {'Status':<9} "
-          f"{'AR':<8} {'Best':<6} {'nfev':<7} {'Runtime'}")
+          f"{'AR':<8} {'Best':<6} {'Baseline':<10} {'nfev':<7} {'Runtime'}")
     print(f"  {'-' * 62}")
 
     for platform in PLATFORMS:
         for r in all_results.get(platform, []):
-            status  = r.get("status", "?")
-            ar      = f"{r['approximation_ratio']:.4f}" if "approximation_ratio" in r else "—"
-            best    = str(r.get("best_cut", "—"))
-            nfev    = str(r.get("cobyla_nfev", "—"))
-            rt      = f"{r['runtime_sec']:.1f}s" if "runtime_sec" in r else "—"
-            backend = r.get("backend", "—")[:20]
+            status   = r.get("status", "?")
+            ar       = f"{r['approximation_ratio']:.4f}" if "approximation_ratio" in r else "—"
+            best     = str(r.get("best_cut", "—"))
+            baseline = str(r.get("optimal_cut", r.get("gw_cut", "—")))
+            nfev     = str(r.get("cobyla_nfev", "—"))
+            rt       = f"{r['runtime_sec']:.1f}s" if "runtime_sec" in r else "—"
+            backend  = r.get("backend", "—")[:20]
             print(f"  {r.get('platform','?'):<12} {backend:<22} "
-                  f"{r.get('p','?'):<4} {status:<9} {ar:<8} {best:<6} {nfev:<7} {rt}")
+                  f"{r.get('p','?'):<4} {status:<9} {ar:<8} {best:<6} {baseline:<10} {nfev:<7} {rt}")
 
     combined = save_combined(all_results)
     total    = round(time.time() - t_wall, 1)

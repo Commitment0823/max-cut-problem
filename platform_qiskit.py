@@ -4,13 +4,12 @@ All params injected via --config JSON + --p int
 Prints one JSON line to stdout on completion.
 Debug output goes to stderr (visible in terminal, not captured by analyzer).
 """
-import os, sys, json, time, itertools, argparse
+import os, sys, json, time, argparse
 import numpy as np
 import networkx as nx
 from scipy.optimize import minimize
 from qiskit import transpile
 from qiskit.circuit import QuantumCircuit, ParameterVector
-import cvxpy as cp
 
 def dbg(msg):
     sys.stderr.write(f"[qiskit debug] {msg}\n")
@@ -64,30 +63,13 @@ dbg(f"graph: {N} nodes, {len(EDGES)} edges")
 def cut(bits) -> int:
     return sum(1 for u, v in EDGES if bits[u] != bits[v])
 
-# ── baseline ──────────────────────────────────────────────────────────────────
-dbg("computing baseline...")
-def brute_force():
-    return max(cut(list(b)) for b in itertools.product([0, 1], repeat=N))
-
-def gw():
-    X = cp.Variable((N, N), symmetric=True)
-    cons = [X >> 0] + [X[i, i] == 1 for i in range(N)]
-    cp.Problem(cp.Maximize(0.5 * sum(1 - X[u, v] for u, v in G.edges())), cons).solve(solver=cp.SCS, verbose=False)
-    mat = X.value; mat = (mat + mat.T) / 2
-    e = np.linalg.eigvalsh(mat).min()
-    if e < 0: mat += (-e + 1e-8) * np.eye(N)
-    L = np.linalg.cholesky(mat)
-    np.random.seed(SEED)
-    best = 0
-    for _ in range(GWR):
-        bits = (L @ np.random.randn(N) >= 0).astype(int)
-        best = max(best, cut(bits))
-    return best
-
-if N <= 20:
-    BASE = brute_force(); BKEY = "optimal_cut"
+# ── baseline (pre-computed by analyzer) ──────────────────────────────────────
+if "optimal_cut" in cfg:
+    BASE = cfg["optimal_cut"]; BKEY = "optimal_cut"
+elif "gw_cut" in cfg:
+    BASE = cfg["gw_cut"];      BKEY = "gw_cut"
 else:
-    BASE = gw();          BKEY = "gw_cut"
+    sys.stderr.write("ERROR: no baseline in config\n"); sys.exit(1)
 dbg(f"baseline: {BKEY}={BASE}")
 
 # ── circuit ───────────────────────────────────────────────────────────────────
