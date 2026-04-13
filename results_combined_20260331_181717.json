@@ -1,0 +1,200 @@
+[
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "p": 1,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 40.8013,
+    "best_cut": 50,
+    "gw_cut": 51,
+    "approximation_ratio": 0.8,
+    "total_shots": 2048,
+    "runtime_sec": 7.0,
+    "cobyla_nfev": 37,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.3451428898153404,
+      2.7794807388860385
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "p": 2,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 43.6343,
+    "best_cut": 51,
+    "gw_cut": 51,
+    "approximation_ratio": 0.8556,
+    "total_shots": 2048,
+    "runtime_sec": 26.49,
+    "cobyla_nfev": 103,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.3994918057512995,
+      2.8206231847395635,
+      2.670001646597487,
+      1.31192379087351
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "p": 3,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 44.1626,
+    "best_cut": 51,
+    "gw_cut": 51,
+    "approximation_ratio": 0.8659,
+    "total_shots": 2048,
+    "runtime_sec": 79.48,
+    "cobyla_nfev": 250,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.2901939598274745,
+      3.230712361828109,
+      2.0692023171839637,
+      1.9582170062681177,
+      0.8757667980313892,
+      -0.16351091546236687
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "PennyLane",
+    "backend": "lightning.gpu",
+    "p": 1,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 40.5205,
+    "best_cut": 51,
+    "gw_cut": 51,
+    "approximation_ratio": 0.7945,
+    "total_shots": 2048,
+    "runtime_sec": 41.19,
+    "cobyla_nfev": 32,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.370936977190514,
+      2.8040008151295432
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "PennyLane",
+    "backend": "lightning.gpu",
+    "p": 2,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 43.6152,
+    "best_cut": 51,
+    "gw_cut": 51,
+    "approximation_ratio": 0.8552,
+    "total_shots": 2048,
+    "runtime_sec": 115.81,
+    "cobyla_nfev": 50,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.400341251087702,
+      2.816346869681046,
+      2.657305090853575,
+      1.344562237251805
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "PennyLane",
+    "backend": "lightning.gpu",
+    "p": 3,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 43.1567,
+    "best_cut": 51,
+    "gw_cut": 51,
+    "approximation_ratio": 0.8462,
+    "total_shots": 2048,
+    "runtime_sec": 266.94,
+    "cobyla_nfev": 80,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.2314841555624139,
+      3.274912882485646,
+      2.365906745336831,
+      1.8853489724224706,
+      0.8790949687153828,
+      -0.016948618748536114
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "Qiskit",
+    "backend": "AerSimulator (GPU)",
+    "p": 1,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 40.7495,
+    "best_cut": 51,
+    "gw_cut": 51,
+    "approximation_ratio": 0.799,
+    "total_shots": 2048,
+    "runtime_sec": 28.19,
+    "cobyla_nfev": 30,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.3497657427361243,
+      2.738297579455451
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "Qiskit",
+    "backend": "AerSimulator (GPU)",
+    "p": 2,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 43.0454,
+    "best_cut": 51,
+    "gw_cut": 51,
+    "approximation_ratio": 0.844,
+    "total_shots": 2048,
+    "runtime_sec": 94.34,
+    "cobyla_nfev": 60,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.391243368014424,
+      2.881217113589311,
+      2.7520857083187793,
+      1.4090922738548763
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "Qiskit",
+    "backend": "AerSimulator (GPU)",
+    "p": 3,
+    "n": 26,
+    "d": 5,
+    "mean_cut": 41.5034,
+    "best_cut": 50,
+    "gw_cut": 51,
+    "approximation_ratio": 0.8138,
+    "total_shots": 2048,
+    "runtime_sec": 167.29,
+    "cobyla_nfev": 75,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.2579338884596043,
+      3.2360987917917123,
+      2.4257579104481417,
+      1.8057022567080427,
+      0.9119316928672068,
+      0.1279274745609955
+    ],
+    "status": "OK"
+  }
+]
