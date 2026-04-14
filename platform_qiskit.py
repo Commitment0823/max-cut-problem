@@ -29,10 +29,10 @@ D       = cfg["d"]
 P       = args.p
 SHOTS   = cfg["shots"]
 SEED    = cfg["seed"]
-GWR     = cfg.get("gw_rounds", 300)
 MAXITER = cfg.get("maxiter", 10000)
 RHOBEG  = cfg.get("rhobeg", 0.5)
 RHOEND  = cfg.get("rhoend", 1e-4)
+QISKIT_PREFLIGHT = bool(cfg.get("qiskit_preflight", False))
 
 dbg(f"config loaded: n={N} d={D} p={P} shots={SHOTS} seed={SEED}")
 np.random.seed(SEED)
@@ -56,15 +56,22 @@ except Exception as e:
 
 # ── graph ─────────────────────────────────────────────────────────────────────
 dbg("building graph...")
-G     = nx.random_regular_graph(d=D, n=N, seed=SEED)
-EDGES = list(G.edges())
+if "graph_edges" in cfg:
+    EDGES = [(int(u), int(v)) for u, v in cfg["graph_edges"]]
+else:
+    # Backward-compatible fallback for older analyzer payloads.
+    G = nx.random_regular_graph(d=D, n=N, seed=SEED)
+    EDGES = list(G.edges())
 dbg(f"graph: {N} nodes, {len(EDGES)} edges")
 
 def cut(bits) -> int:
     return sum(1 for u, v in EDGES if bits[u] != bits[v])
 
 # ── baseline (pre-computed by analyzer) ──────────────────────────────────────
-if "optimal_cut" in cfg:
+if "baseline_value" in cfg:
+    BASE = cfg["baseline_value"]
+    BKEY = cfg.get("baseline_key", "optimal_cut")
+elif "optimal_cut" in cfg:
     BASE = cfg["optimal_cut"]; BKEY = "optimal_cut"
 elif "gw_cut" in cfg:
     BASE = cfg["gw_cut"];      BKEY = "gw_cut"
@@ -99,18 +106,19 @@ def run_circuit(x):
     result = job.result()
     return result.get_counts()
 
-# test one shot before optimization
-dbg("test run with init params...")
-try:
-    np.random.seed(SEED)
-    test_params = np.random.uniform(0, np.pi, 2 * P)
-    test_counts = run_circuit(test_params)
-    sample_bs   = next(iter(test_counts))
-    dbg(f"test OK: got {len(test_counts)} unique bitstrings, sample='{sample_bs}' len={len(sample_bs.replace(' ',''))}")
-except Exception as e:
-    dbg(f"FATAL test run: {e}")
-    import traceback; traceback.print_exc(file=sys.stderr)
-    sys.exit(1)
+if QISKIT_PREFLIGHT:
+    # Optional preflight can help debugging but changes warm-start behavior.
+    dbg("test run with init params...")
+    try:
+        np.random.seed(SEED)
+        test_params = np.random.uniform(0, np.pi, 2 * P)
+        test_counts = run_circuit(test_params)
+        sample_bs   = next(iter(test_counts))
+        dbg(f"test OK: got {len(test_counts)} unique bitstrings, sample='{sample_bs}' len={len(sample_bs.replace(' ',''))}")
+    except Exception as e:
+        dbg(f"FATAL test run: {e}")
+        import traceback; traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
 
 # ── optimize ──────────────────────────────────────────────────────────────────
 def cost_fn(x):
@@ -139,6 +147,8 @@ dbg(f"results: mc={mc:.4f} bc={bc} ar={mc/BASE:.4f}")
 
 print(json.dumps({
     "platform": "Qiskit", "backend": BACKEND,
+    "status": "OK",
+    "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
     "p": P, "n": N, "d": D,
     "mean_cut": round(mc, 4), "best_cut": int(bc),
     BKEY: BASE, "approximation_ratio": round(mc / BASE, 4),

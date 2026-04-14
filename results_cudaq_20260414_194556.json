@@ -1,0 +1,80 @@
+[
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "status": "OK",
+    "cuda_visible_devices": "0",
+    "p": 1,
+    "n": 20,
+    "d": 4,
+    "mean_cut": 26.5781,
+    "best_cut": 34,
+    "optimal_cut": 34,
+    "approximation_ratio": 0.7817,
+    "total_shots": 1024,
+    "runtime_sec": 6.0,
+    "cobyla_nfev": 33,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.8314016765133871,
+      2.738198503885662
+    ],
+    "gpu_index": 0,
+    "gpu_name": "NVIDIA RTX A4000",
+    "gpu_uuid": "GPU-926a00bb-6e8e-f888-fd70-3cc60243ee93"
+  },
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "status": "OK",
+    "cuda_visible_devices": "0",
+    "p": 2,
+    "n": 20,
+    "d": 4,
+    "mean_cut": 27.6035,
+    "best_cut": 34,
+    "optimal_cut": 34,
+    "approximation_ratio": 0.8119,
+    "total_shots": 1024,
+    "runtime_sec": 9.72,
+    "cobyla_nfev": 56,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.7666128404642074,
+      3.0534464607858163,
+      2.262119947536449,
+      2.0096327147197335
+    ],
+    "gpu_index": 0,
+    "gpu_name": "NVIDIA RTX A4000",
+    "gpu_uuid": "GPU-926a00bb-6e8e-f888-fd70-3cc60243ee93"
+  },
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "status": "OK",
+    "cuda_visible_devices": "0",
+    "p": 3,
+    "n": 20,
+    "d": 4,
+    "mean_cut": 28.9316,
+    "best_cut": 34,
+    "optimal_cut": 34,
+    "approximation_ratio": 0.8509,
+    "total_shots": 1024,
+    "runtime_sec": 12.15,
+    "cobyla_nfev": 79,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.5593455307916562,
+      2.957222567254739,
+      2.7962244935063443,
+      2.3682852853982217,
+      0.5411354231269873,
+      0.3049848049920535
+    ],
+    "gpu_index": 0,
+    "gpu_name": "NVIDIA RTX A4000",
+    "gpu_uuid": "GPU-926a00bb-6e8e-f888-fd70-3cc60243ee93"
+  }
+]

@@ -16,7 +16,6 @@ Features:
 import subprocess, json, os, sys, time, itertools
 from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
 import numpy as np
 import networkx as nx
 import cvxpy as cp
@@ -33,6 +32,8 @@ CONFIG = {
     "maxiter"  : 10000,    # COBYLA max iterations (exits early on convergence)
     "rhobeg"   : 0.5,      # COBYLA initial trust region radius
     "rhoend"   : 1e-4,     # COBYLA convergence threshold (catol internally)
+    "gpu_index": 0,        # force all workers to this visible GPU index
+    "require_gpu": True,   # fail a platform run if GPU backend is unavailable
 }
 
 P_DEPTHS = [1, 2, 3]
@@ -58,13 +59,19 @@ LABELS = {
 DIR       = Path(__file__).parent
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+
+def build_dataset_edges(n: int, d: int, seed: int) -> list[list[int]]:
+    """Build a canonical graph instance once in analyzer."""
+    G = nx.random_regular_graph(d=d, n=n, seed=seed)
+    edges = sorted((min(int(u), int(v)), max(int(u), int(v))) for u, v in G.edges())
+    return [[u, v] for u, v in edges]
+
 # ── baseline (computed once) ──────────────────────────────────────────────────
-def compute_baseline(n, d, seed, gw_rounds):
-    G     = nx.random_regular_graph(d=d, n=n, seed=seed)
-    edges = list(G.edges())
+def compute_baseline(n: int, edges: list[list[int]], seed: int, gw_rounds: int):
+    edge_tuples = [(int(u), int(v)) for u, v in edges]
 
     def cut(bits):
-        return sum(1 for u, v in edges if bits[u] != bits[v])
+        return sum(1 for u, v in edge_tuples if bits[u] != bits[v])
 
     if n <= 20:
         print(f"  [baseline] brute-force (n={n}, 2^{n}={2**n:,} combinations)...")
@@ -75,9 +82,12 @@ def compute_baseline(n, d, seed, gw_rounds):
     else:
         print(f"  [baseline] Goemans-Williamson SDP (n={n}, rounds={gw_rounds})...")
         t0 = time.time()
+        G = nx.Graph()
+        G.add_nodes_from(range(n))
+        G.add_edges_from(edge_tuples)
         X  = cp.Variable((n, n), symmetric=True)
         cons = [X >> 0] + [X[i, i] == 1 for i in range(n)]
-        cp.Problem(cp.Maximize(0.5 * sum(1 - X[u, v] for u, v in G.edges())),
+        cp.Problem(cp.Maximize(0.5 * sum(1 - X[u, v] for u, v in edge_tuples)),
                    cons).solve(solver=cp.SCS, verbose=False)
         mat = X.value; mat = (mat + mat.T) / 2
         e   = np.linalg.eigvalsh(mat).min()
@@ -91,6 +101,49 @@ def compute_baseline(n, d, seed, gw_rounds):
         print(f"  [baseline] gw_cut = {best}  ({time.time()-t0:.1f}s)")
         return best, "gw_cut"
 
+
+def parse_worker_json(stdout_text: str) -> dict:
+    text = (stdout_text or "").strip()
+    if not text:
+        raise ValueError("empty worker stdout")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            raise
+        return json.loads(lines[-1])
+
+
+def get_gpu_info(gpu_index: int) -> dict:
+    """Best-effort query for one GPU row via nvidia-smi."""
+    query = "index,name,uuid,pci.bus_id,memory.total"
+    cmd = ["nvidia-smi", f"--query-gpu={query}", "--format=csv,noheader"]
+    try:
+        rows = subprocess.check_output(cmd, text=True).strip().splitlines()
+        for row in rows:
+            parts = [p.strip() for p in row.split(",")]
+            if len(parts) < 5:
+                continue
+            idx = int(parts[0])
+            if idx == gpu_index:
+                return {
+                    "gpu_index": idx,
+                    "gpu_name": parts[1],
+                    "gpu_uuid": parts[2],
+                    "gpu_pci_bus_id": parts[3],
+                    "gpu_memory_total": parts[4],
+                }
+    except Exception:
+        pass
+    return {
+        "gpu_index": gpu_index,
+        "gpu_name": "unknown",
+        "gpu_uuid": "unknown",
+        "gpu_pci_bus_id": "unknown",
+        "gpu_memory_total": "unknown",
+    }
+
 # ── runner ────────────────────────────────────────────────────────────────────
 def run_p(platform: str, p: int, cfg_str: str) -> dict:
     cmd = [sys.executable, str(DIR / SCRIPTS[platform]),
@@ -98,10 +151,13 @@ def run_p(platform: str, p: int, cfg_str: str) -> dict:
 
     print(f"    p={p} ...", end="", flush=True)
     t0 = time.time()
+    env = os.environ.copy()
+    env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    env["CUDA_VISIBLE_DEVICES"] = str(CONFIG.get("gpu_index", 0))
 
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True)
+                                stderr=subprocess.PIPE, text=True, env=env)
         try:
             out, err = proc.communicate(timeout=TIMEOUT_PER_P)
         except subprocess.TimeoutExpired:
@@ -115,13 +171,29 @@ def run_p(platform: str, p: int, cfg_str: str) -> dict:
         if proc.returncode != 0:
             rt = round(time.time() - t0, 1)
             print(f"  ERROR (exit {proc.returncode})")
+            if out and out.strip():
+                try:
+                    r = parse_worker_json(out)
+                    r.setdefault("platform", LABELS[platform])
+                    r.setdefault("p", p)
+                    r.setdefault("n", CONFIG["n"])
+                    r.setdefault("d", CONFIG["d"])
+                    r.setdefault("status", "ERROR")
+                    r["runtime_sec"] = rt
+                    return r
+                except Exception:
+                    pass
             if err: print(f"      {err.strip()[:1000]}")
             return {"platform": LABELS[platform], "p": p, "n": CONFIG["n"],
                     "d": CONFIG["d"], "status": "ERROR",
                     "error": err.strip()[:1000], "runtime_sec": rt}
 
-        r = json.loads(out.strip())
-        r["status"] = "OK"
+        r = parse_worker_json(out)
+        r.setdefault("status", "OK")
+        r.setdefault("platform", LABELS[platform])
+        r.setdefault("p", p)
+        r.setdefault("n", CONFIG["n"])
+        r.setdefault("d", CONFIG["d"])
         ar   = r.get("approximation_ratio", "?")
         bc   = r.get("best_cut", "?")
         rt   = r.get("runtime_sec", "?")
@@ -136,6 +208,25 @@ def run_p(platform: str, p: int, cfg_str: str) -> dict:
         return {"platform": LABELS[platform], "p": p, "n": CONFIG["n"],
                 "d": CONFIG["d"], "status": "ERROR",
                 "error": str(e), "runtime_sec": rt}
+
+
+def run_cudaq(p: int, cfg_str: str) -> dict:
+    return run_p("cudaq", p, cfg_str)
+
+
+def run_pennylane(p: int, cfg_str: str) -> dict:
+    return run_p("pennylane", p, cfg_str)
+
+
+def run_qiskit(p: int, cfg_str: str) -> dict:
+    return run_p("qiskit", p, cfg_str)
+
+
+RUNNERS = {
+    "cudaq": run_cudaq,
+    "pennylane": run_pennylane,
+    "qiskit": run_qiskit,
+}
 
 # ── checkpoint ────────────────────────────────────────────────────────────────
 def save(platform: str, results: list):
@@ -157,19 +248,33 @@ def main():
     print("=" * 65)
     print(f"  n={CONFIG['n']}  d={CONFIG['d']}  shots={CONFIG['shots']}  seed={CONFIG['seed']}")
     print(f"  maxiter={CONFIG['maxiter']}  rhobeg={CONFIG['rhobeg']}  rhoend={CONFIG['rhoend']}")
+    print(f"  gpu_index : {CONFIG['gpu_index']} (forced by analyzer)")
     print(f"  p depths  : {P_DEPTHS}")
     print(f"  platforms : {PLATFORMS}")
     print(f"  timeout   : {TIMEOUT_PER_P}s per p")
     print(f"  timestamp : {TIMESTAMP}")
     print("=" * 65)
 
-    # compute baseline once, inject into config for all platforms
+    # Build one dataset instance and compute one baseline for all platforms.
+    gpu_info = get_gpu_info(int(CONFIG.get("gpu_index", 0)))
+    print(f"  gpu_name  : {gpu_info['gpu_name']}")
+    print(f"  gpu_uuid  : {gpu_info['gpu_uuid']}")
+
+    dataset_edges = build_dataset_edges(CONFIG["n"], CONFIG["d"], CONFIG["seed"])
     baseline_val, baseline_key = compute_baseline(
-        CONFIG["n"], CONFIG["d"], CONFIG["seed"], CONFIG["gw_rounds"]
+        CONFIG["n"], dataset_edges, CONFIG["seed"], CONFIG["gw_rounds"]
     )
-    cfg = {**CONFIG, baseline_key: baseline_val}
+    cfg = {
+        **CONFIG,
+        "graph_edges": dataset_edges,
+        **gpu_info,
+        "baseline_key": baseline_key,
+        "baseline_value": baseline_val,
+        baseline_key: baseline_val,
+    }
     cfg_str = json.dumps(cfg)
 
+    print(f"  dataset   : {len(dataset_edges)} edges (owned by analyzer)")
     print(f"\n  baseline  : {baseline_key} = {baseline_val}")
     print("=" * 65)
 
@@ -189,7 +294,10 @@ def main():
                                  "status": "SKIPPED"})
                 continue
 
-            r = run_p(platform, p, cfg_str)
+            r = RUNNERS[platform](p, cfg_str)
+            r.setdefault("gpu_index", gpu_info["gpu_index"])
+            r.setdefault("gpu_name", gpu_info["gpu_name"])
+            r.setdefault("gpu_uuid", gpu_info["gpu_uuid"])
             results.append(r)
             save(platform, results)
 

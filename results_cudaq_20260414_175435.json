@@ -1,0 +1,68 @@
+[
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "p": 1,
+    "n": 20,
+    "d": 4,
+    "mean_cut": 26.5117,
+    "best_cut": 34,
+    "optimal_cut": 34,
+    "approximation_ratio": 0.7798,
+    "total_shots": 1024,
+    "runtime_sec": 0.85,
+    "cobyla_nfev": 35,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.8315563638602523,
+      2.7534334402462965
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "p": 2,
+    "n": 20,
+    "d": 4,
+    "mean_cut": 28.4961,
+    "best_cut": 34,
+    "optimal_cut": 34,
+    "approximation_ratio": 0.8381,
+    "total_shots": 1024,
+    "runtime_sec": 2.35,
+    "cobyla_nfev": 310,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.915557323087946,
+      2.993688437438756,
+      1.9271481842722507,
+      2.3780723666840986
+    ],
+    "status": "OK"
+  },
+  {
+    "platform": "CUDA-Q",
+    "backend": "nvidia (GPU)",
+    "p": 3,
+    "n": 20,
+    "d": 4,
+    "mean_cut": 30.6074,
+    "best_cut": 34,
+    "optimal_cut": 34,
+    "approximation_ratio": 0.9002,
+    "total_shots": 1024,
+    "runtime_sec": 1.4,
+    "cobyla_nfev": 123,
+    "cobyla_success": true,
+    "optimal_params": [
+      1.4035210439451098,
+      2.8405583701690564,
+      2.775547670611719,
+      2.1536382451379295,
+      0.4506100955667593,
+      0.24466794558225127
+    ],
+    "status": "OK"
+  }
+]
